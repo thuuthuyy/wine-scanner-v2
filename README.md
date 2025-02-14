@@ -24,5 +24,5 @@
 - Use the following command to start the API server:
 command: `uvicorn api:app -- host 0000 --port 8000 --reload`
 - You can find swagger documentation at `/api/docs`. 
-  For example <http:localhost:8000/api/docs>.
+  For example <http:localhost:8000/docs>.
 
