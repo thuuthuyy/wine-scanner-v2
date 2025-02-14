@@ -1,51 +1,61 @@
 import json
 import hashlib
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, Distance, VectorParams, CollectionConfig
+from qdrant_client.models import PointStruct, Distance, VectorParams
 from sentence_transformers import SentenceTransformer
 
-# Hàm tạo ID duy nhất từ URL bằng hash
-def generate_unique_id(url):
-    return int(hashlib.md5(url.encode()).hexdigest(), 16) % (10**12)  # Chuyển hash thành số nguyên 12 chữ số
+# Generate a unique ID from a URL using hashing
 
-# Đường dẫn file JSON
-json_file_path = "wine_details3.json"
 
-# Khởi tạo Qdrant Client (local hoặc remote server)
+def generate_unique_id(url: str) -> int:
+    """Generate a 12-digit unique integer ID from a given URL."""
+    return int(hashlib.md5(url.encode()).hexdigest(), 16) % (10**12)
+
+
+# Path to the JSON file containing wine details
+JSON_FILE_PATH = "wine_details3.json"
+
+# Initialize Qdrant Client (for local or remote server)
 client = QdrantClient("localhost", port=6333, timeout=30)
 
-# Tên collection trong Qdrant
-collection_name = "wine_collection"
+# Collection name in Qdrant
+COLLECTION_NAME = "wine_collection"
 
-# Khởi tạo mô hình để mã hóa văn bản thành vector
+# Load the sentence transformer model for text encoding
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-
-# Tạo collection nếu chưa tồn tại
-if collection_name not in [c.name for c in client.get_collections().collections]:
+# Create the collection if it does not exist
+if COLLECTION_NAME not in [c.name for c in client.get_collections().collections]:
     client.create_collection(
-        collection_name=collection_name,
-        vectors_config=VectorParams(size=model.get_sentence_embedding_dimension(), distance=Distance.COSINE),  # Kích thước vector của "all-MiniLM-L6-v2" là 384
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(
+            size=model.get_sentence_embedding_dimension(),  # Vector size for "all-MiniLM-L6-v2" is 384
+            distance=Distance.COSINE,
+        ),
     )
 
-# Đọc dữ liệu từ file JSON
-with open(json_file_path, "r", encoding="utf-8") as file:
+# Load wine data from the JSON file
+with open(JSON_FILE_PATH, "r", encoding="utf-8") as file:
     wine_data_list = json.load(file)
 
-# Chia nhỏ dữ liệu thành từng batch nhỏ (ví dụ: 1000 điểm một lần)
+# Define batch size for upserting data
 BATCH_SIZE = 1000
+
 total_uploaded = 0
 
+# Process data in batches
 for i in range(0, len(wine_data_list), BATCH_SIZE):
-    batch = wine_data_list[i : i + BATCH_SIZE]  # Cắt dữ liệu thành từng phần nhỏ
+    batch = wine_data_list[i : i + BATCH_SIZE]
     points = []
 
     for wine in batch:
-        if "url" not in wine or not wine["url"]:  # Nếu không có URL, bỏ qua
+        if "url" not in wine or not wine["url"]:  # Skip records without a URL
             continue
-        
-        unique_id = generate_unique_id(wine["url"])  # Sử dụng URL làm ID duy nhất
-        vector = model.encode(wine["name"]).tolist()  # Mã hóa thành vector
+
+        unique_id = generate_unique_id(wine["url"])  # Generate unique ID based on URL
+        vector = model.encode(wine["name"]).tolist()  # Encode wine name to vector
+
+        # Construct payload with all available wine attributes
         payload = {
             "wine_id": wine["wine_id"],
             "name": wine["name"],
@@ -71,9 +81,9 @@ for i in range(0, len(wine_data_list), BATCH_SIZE):
         }
         points.append(PointStruct(id=unique_id, vector=vector, payload=payload))
 
-    # Upsert từng batch vào Qdrant
-    client.upsert(collection_name=collection_name, points=points)
-    
+    # Upsert batch into Qdrant
+    client.upsert(collection_name=COLLECTION_NAME, points=points)
+
     total_uploaded += len(points)
     print(f"Uploaded {total_uploaded}/{len(wine_data_list)} records...")
 
